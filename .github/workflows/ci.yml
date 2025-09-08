@@ -1,4 +1,4 @@
-name: Simple Build
+name: Build with Cache and Artifacts Demo
 
 on:
   push:
@@ -11,12 +11,28 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
+    # Example of explicit Maven dependency caching
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
     - name: Set up JDK 8
       uses: actions/setup-java@v3
       with:
         java-version: '8'
         distribution: 'temurin'
-        cache: maven
-        
-    - name: Build and Test
+    
+    - name: Build with Maven
       run: mvn -B package --file pom.xml
+
+    # Example of multiple artifact uploads
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: application-jar
+        path: target/*.jar
+        retention-days: 5
