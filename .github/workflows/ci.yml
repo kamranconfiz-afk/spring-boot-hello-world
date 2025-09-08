@@ -36,3 +36,25 @@ jobs:
         name: application-jar
         path: target/*.jar
         retention-days: 5
+
+    - name: Upload Test Reports
+      if: always()  # Upload even if tests fail
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: target/surefire-reports/
+        retention-days: 1
+
+  # Example of artifact download in another job
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download JAR
+        uses: actions/download-artifact@v3
+        with:
+          name: application-jar
+          path: target/
+
+      - name: Display structure of downloaded files
+        run: ls -R target/
