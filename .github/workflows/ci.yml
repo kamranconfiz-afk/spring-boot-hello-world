@@ -11,7 +11,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         java: [8]
-      fail-fast: false  # Continue other matrix jobs even if one fails
+      fail-fast: false
 
     steps:
     - uses: actions/checkout@v3
@@ -29,9 +29,22 @@ jobs:
       with:
         java-version: ${{ matrix.java }}
         distribution: 'temurin'
-    
+
+    # Fix for Windows Surefire issues
+    - name: Fix Windows environment
+      if: runner.os == 'Windows'
+      run: |
+        echo "TEMP=D:\\temp" >> $env:GITHUB_ENV
+        echo "TMP=D:\\temp" >> $env:GITHUB_ENV
+        New-Item -ItemType Directory -Force -Path D:\temp
+
+    # Set Maven options for all environments
+    - name: Set Maven options
+      run: echo "MAVEN_OPTS=-Xmx1024m -Djava.io.tmpdir=$RUNNER_TEMP" >> $GITHUB_ENV
+
+    # Build and test
     - name: Build with Maven
-      run: mvn -B package --file pom.xml
+      run: mvn -B clean package --file pom.xml
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
@@ -57,11 +70,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
-      # Fetch Docker credentials from Vault
+
       - name: Fetch Docker credentials from Vault
         env:
-          VAULT_ADDR: "http://65.0.135.239:8200"
+          VAULT_ADDR: "http://13.233.118.161:8200"
           VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
         run: |
           echo "Reading Docker credentials from Vault..."
@@ -70,11 +82,9 @@ jobs:
                              --request GET \
                              $VAULT_ADDR/v1/kv/data/docker_cred)
           
-          echo "Parsing credentials..."
           DOCKER_USERNAME=$(echo $SECRET_JSON | jq -r '.data.data.DOCKER_USERNAME')
           DOCKER_PASSWORD=$(echo $SECRET_JSON | jq -r '.data.data.DOCKER_PASSWORD')
           
-          # Mask secrets
           echo "::add-mask::$DOCKER_USERNAME"
           echo "::add-mask::$DOCKER_PASSWORD"
           
@@ -92,10 +102,8 @@ jobs:
         env:
           DOCKER_IMAGE_NAME: "spring-boot-hello-world-for-kamran"
         run: |
-          echo "Building Docker image..."
           docker build -t ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA} .
           docker build -t ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:latest .
           
-          echo "Pushing Docker images..."
           docker push ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA}
           docker push ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:latest
