@@ -11,7 +11,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
-    # Example of explicit Maven dependency caching
     - name: Cache Maven dependencies
       uses: actions/cache@v3
       with:
@@ -29,7 +28,6 @@ jobs:
     - name: Build with Maven
       run: mvn -B package --file pom.xml
 
-    # Example of multiple artifact uploads
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -39,7 +37,7 @@ jobs:
         compression-level: 9
 
     - name: Upload Test Reports
-      if: always()  # Upload even if tests fail
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: test-reports
@@ -47,7 +45,6 @@ jobs:
         retention-days: 1
         compression-level: 6
 
-  # Example of artifact download in another job
   test:
     needs: build
     runs-on: ubuntu-latest
@@ -61,42 +58,66 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R target/
 
-  # Add Docker build and push job
   docker:
-    needs: [build, test]  # Run after build and test jobs complete
+    needs: [build, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
-      # Download the built JAR
+
       - name: Download JAR
         uses: actions/download-artifact@v4
         with:
           name: application-jar
           path: target/
-      
-      # Set up Docker Buildx
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Print Docker info
       - name: Docker Info
         run: docker info
 
-      # Login to Docker Hub
+      # ✅ Install Vault CLI
+      - name: Install Vault CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip jq
+          VAULT_VERSION="1.17.2"
+          wget https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
+          unzip vault_${VAULT_VERSION}_linux_amd64.zip
+          sudo mv vault /usr/local/bin/
+          vault --version
+
+      # ✅ Fetch Docker credentials from Vault
+      - name: Fetch Docker credentials from Vault
+        env:
+          VAULT_ADDR: "http://13.233.118.161:8200"
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+        run: |
+          echo "Reading secrets from Vault..."
+          SECRET_JSON=$(curl --header "X-Vault-Token: $VAULT_TOKEN" \
+                             --request GET \
+                             $VAULT_ADDR/v1/kv/data/docker_cred)
+          
+          echo "Parsing secrets..."
+          DOCKER_USERNAME=$(echo $SECRET_JSON | jq -r '.data.data.username')
+          DOCKER_PASSWORD=$(echo $SECRET_JSON | jq -r '.data.data.password')
+          
+          # Mask secrets in logs
+          echo "::add-mask::$DOCKER_USERNAME"
+          echo "::add-mask::$DOCKER_PASSWORD"
+          
+          echo "DOCKER_USERNAME=$DOCKER_USERNAME" >> $GITHUB_ENV
+          echo "DOCKER_PASSWORD=$DOCKER_PASSWORD" >> $GITHUB_ENV
+
+      # ✅ Docker Login using Vault creds
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          logout: true
-        
-      # Build and push Docker images
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+      # Build and push Docker image
       - name: Build and Push Docker Images
         env:
           DOCKER_IMAGE_NAME: "spring-boot-hello-world-for-kamran"
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         run: |
           echo "Building Docker image..."
           docker build -t ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA} .
