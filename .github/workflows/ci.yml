@@ -96,7 +96,7 @@ jobs:
       # Fetch Docker credentials from Vault
       - name: Fetch Docker credentials from Vault
         env:
-          VAULT_ADDR: "http://13.233.118.161:8200"
+          VAULT_ADDR: "http://65.0.135.239:8200"
           VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
         run: |
           echo "Reading Docker credentials from Vault..."
