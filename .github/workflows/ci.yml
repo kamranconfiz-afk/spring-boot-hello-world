@@ -30,12 +30,13 @@ jobs:
       # Fix Windows Temp Path to avoid long paths
       - name: Fix Windows Temp Path
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          echo "TEMP=D:\\temp" >> $env:GITHUB_ENV
-          echo "TMP=D:\\temp" >> $env:GITHUB_ENV
+          echo "TEMP=D:\\temp" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "TMP=D:\\temp" | Out-File -FilePath $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force -Path D:\temp
 
-      # Set Maven Options for all OS
+      # Set Maven Options
       - name: Set Maven Options
         run: echo "MAVEN_OPTS=-Xmx1024m -Djava.io.tmpdir=$RUNNER_TEMP" >> $GITHUB_ENV
 
@@ -52,9 +53,9 @@ jobs:
       - name: Build and Test with Maven
         run: mvn -B clean verify --file pom.xml
 
-      # Upload JAR as artifact
+      # Upload JAR artifact (only from Ubuntu build)
       - name: Upload Build Artifact
-        if: matrix.os == 'ubuntu-latest' && matrix.java == '17' # Only once
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '8'
         uses: actions/upload-artifact@v4
         with:
           name: application-jar
@@ -88,25 +89,29 @@ jobs:
           name: application-jar
           path: target/
 
+      # Install jq for JSON parsing
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       # Fetch Docker credentials from Vault
       - name: Fetch Docker credentials from Vault
         env:
           VAULT_ADDR: "http://13.233.118.161:8200"
-          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }} # GitHub secret storing Vault token
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
         run: |
           echo "Reading Docker credentials from Vault..."
           SECRET_JSON=$(curl --header "X-Vault-Token: $VAULT_TOKEN" \
                              --silent \
                              --request GET \
                              $VAULT_ADDR/v1/kv/data/docker_cred)
-          
+
           echo "Parsing credentials..."
           DOCKER_USERNAME=$(echo $SECRET_JSON | jq -r '.data.data.DOCKER_USERNAME')
           DOCKER_PASSWORD=$(echo $SECRET_JSON | jq -r '.data.data.DOCKER_PASSWORD')
-          
+
           echo "::add-mask::$DOCKER_USERNAME"
           echo "::add-mask::$DOCKER_PASSWORD"
-          
+
           echo "DOCKER_USERNAME=$DOCKER_USERNAME" >> $GITHUB_ENV
           echo "DOCKER_PASSWORD=$DOCKER_PASSWORD" >> $GITHUB_ENV
 
@@ -125,8 +130,8 @@ jobs:
         run: |
           echo "Building Docker image..."
           docker build -t ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA} .
-          docker build -t ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:latest .
-          
+          docker tag ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA} ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:latest
+
           echo "Pushing Docker images to Docker Hub..."
           docker push ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${GITHUB_SHA}
           docker push ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:latest
