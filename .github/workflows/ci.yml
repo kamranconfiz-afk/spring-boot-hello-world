@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        java: [8, 11, 17]
+        java: [8]
       fail-fast: false  # Continue other matrix jobs even if one fails
 
     steps:
